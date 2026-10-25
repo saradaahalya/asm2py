@@ -64,3 +64,7 @@ def test_rejects_non_label_jump_target() -> None:
 def test_rejects_missing_newline() -> None:
     with pytest.raises(AsmSyntaxError, match="end of line"):
         parse("hlt")
+
+def test_rejects_duplicate_label() -> None:
+    with pytest.raises(AsmSyntaxError, match="duplicate label"):
+        Parser(Lexer("dup: mov eax, 1\ndup: hlt\n").tokenize()).parse()
