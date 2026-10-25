@@ -39,6 +39,26 @@ def test_loop_sum_1_to_5():
     assert run_asm(src) == "15\n"
 
 
+def test_self_loop_uses_structured_while_without_pc_state():
+    source = """
+    mov eax, 0
+    mov ecx, 1
+    top:
+    add eax, ecx
+    inc ecx
+    cmp ecx, 6
+    jl top
+    print eax
+    hlt
+    """
+    program = Parser(Lexer(source).tokenize()).parse()
+    code = CodeGenerator(build_blocks(program)).generate()
+    assert "pc =" not in code
+    assert "while True:" in code
+    assert "if ecx >= 6:" in code
+    assert run_asm(source) == "15\n"
+
+
 IF_ELSE = """
 mov eax, {x}
 cmp eax, 5

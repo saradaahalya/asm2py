@@ -65,10 +65,22 @@ class CodeGenerator:
             lines.append("stack = []")
         if has_call_stack:
             lines.append("call_stack = []")
-        lines.extend([f"pc = {first_id}", "while True:"])
-        for index, block in enumerate(self.blocks):
-            lines.extend(self._block_lines(index, block, use_fused_comparisons))
-        lines.append(f"{INDENT}break  # no block matches pc: stop")
+        structured_loops = self._structured_loops()
+        if structured_loops is not None:
+            for index, block in enumerate(self.blocks):
+                if index in structured_loops:
+                    lines.extend(
+                        self._structured_loop_lines(
+                            block, use_fused_comparisons
+                        )
+                    )
+                else:
+                    lines.extend(self._straight_block_lines(block))
+        else:
+            lines.extend([f"pc = {first_id}", "while True:"])
+            for index, block in enumerate(self.blocks):
+                lines.extend(self._block_lines(index, block, use_fused_comparisons))
+            lines.append(f"{INDENT}break  # no block matches pc: stop")
         return "\n".join(lines) + "\n"
 
     # ---------- blocks ----------
@@ -112,6 +124,137 @@ class CodeGenerator:
 
         lines.extend(f"{INDENT * 2}{line}" for line in body)
         return lines
+
+    def _structured_loops(self) -> dict[int, bool] | None:
+        """Find loops that can be represented by sequential Python blocks."""
+        if not self.blocks:
+            return {}
+
+        loops: dict[int, bool] = {}
+        control_flow = set(CONDITIONS) | ENDS_FLOW
+        for index, block in enumerate(self.blocks):
+            if not block.instructions:
+                return None
+            last = block.instructions[-1]
+            opcode = last.opcode.lower()
+            if opcode in CONDITIONS:
+                if index == 0 or index + 1 >= len(self.blocks):
+                    return None
+                target = self._target(last.operands[0])
+                next_id = self._next_id(index)
+                previous = self.blocks[index - 1]
+                previous_last = previous.instructions[-1]
+                if (
+                    target == block.id
+                    and next_id is not None
+                    and next_id in block.successors
+                    and previous_last.opcode.lower() not in control_flow
+                ):
+                    loops[index] = True
+                    continue
+                return None
+            if opcode in control_flow:
+                if opcode == "hlt" and index == len(self.blocks) - 1:
+                    continue
+                return None
+        return loops
+
+    def _straight_block_lines(self, block: BasicBlock) -> list[str]:
+        """Generate a block that falls through to the following block."""
+        label = f"  # {block.label}:" if block.label else ""
+        lines: list[str] = []
+        if label:
+            lines.append(label.lstrip())
+        instructions = block.instructions
+        terminal_comment: str | None = None
+        if instructions and instructions[-1].opcode.lower() == "hlt":
+            instructions = instructions[:-1]
+            terminal_comment = f"# {self._asm_text(block.instructions[-1])}"
+        for instruction in instructions:
+            lines.extend(self._instruction(instruction))
+        if terminal_comment is not None:
+            lines.append(terminal_comment)
+        if not lines:
+            lines.append("pass")
+        return lines
+
+    def _structured_loop_lines(
+        self, block: BasicBlock, use_fused_comparisons: bool
+    ) -> list[str]:
+        """Generate a self-loop as a Python ``while`` with a break exit."""
+        last = block.instructions[-1]
+        lines = ["while True:"]
+        body = block.instructions[:-1]
+        comparison = body[-1] if body else None
+        fused = (
+            last.opcode.lower() in CONDITIONS
+            and comparison is not None
+            and comparison.opcode.lower() == "cmp"
+            and use_fused_comparisons
+        )
+        if fused:
+            body = body[:-1]
+            for instruction in body:
+                lines.extend(
+                    f"{INDENT}{line}" for line in self._instruction(instruction)
+                )
+            condition = self._negated_comparison_condition(comparison, last)
+            positive = self._comparison_condition(comparison, last)
+            comment = (
+                f"  # {self._asm_text(comparison)}; {self._asm_text(last)}"
+                f" (if {positive}:)"
+            )
+            lines.append(f"{INDENT}if {condition}:{comment}")
+            lines.append(f"{INDENT * 2}break")
+        else:
+            for instruction in body:
+                lines.extend(
+                    f"{INDENT}{line}" for line in self._instruction(instruction)
+                )
+            if last.opcode.lower() in CONDITIONS:
+                lines.append(f"{INDENT}if not ({CONDITIONS[last.opcode.lower()]}):")
+                lines.append(f"{INDENT * 2}break  # {self._asm_text(last)}")
+            else:
+                lines.append(f"{INDENT}continue  # {self._asm_text(last)}")
+        if len(lines) == 1:
+            lines.append(f"{INDENT}pass")
+        return lines
+
+    def _negated_comparison_condition(
+        self, comparison: Instruction, jump: Instruction
+    ) -> str:
+        """Return the direct expression for taking a conditional jump's exit."""
+        operators = {
+            "je": "!=",
+            "jne": "==",
+            "jg": "<=",
+            "jl": ">=",
+            "jge": "<",
+            "jle": ">",
+        }
+        left, right = (
+            self._operand(operand) for operand in comparison.operands
+        )
+        return f"{left} {operators[jump.opcode.lower()]} {right}"
+
+    def _comparison_condition(
+        self, comparison: Instruction, jump: Instruction
+    ) -> str:
+        """Return the direct comparison expression for a fused loop exit."""
+        if comparison.opcode.lower() != "cmp":
+            raise ValueError("structured conditional loop requires cmp")
+        operators = {
+            "je": "==",
+            "jne": "!=",
+            "jg": ">",
+            "jl": "<",
+            "jge": ">=",
+            "jle": "<=",
+        }
+        left, right = (
+            self._operand(operand) for operand in comparison.operands
+        )
+        return f"{left} {operators[jump.opcode.lower()]} {right}"
 
     def _can_fuse_comparisons(self) -> bool:
         """Return whether every flag operation has a directly usable comparison."""
