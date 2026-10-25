@@ -11,13 +11,14 @@ def test_tokenizes_instruction_and_register_case_insensitively() -> None:
     assert [(token.type, token.value) for token in tokens] == [
         (TokenType.INSTRUCTION, "mov"),
         (TokenType.REGISTER, "eax"),
+        (TokenType.NEWLINE, "\n"),
         (TokenType.EOF, ""),
     ]
 
 
 def test_tokenizes_decimal_and_negative_numbers() -> None:
     tokens = Lexer("add eax, -42").tokenize()
-    assert [token.value for token in tokens[:-1]] == ["add", "eax", ",", "-42"]
+    assert [token.value for token in tokens[:-2]] == ["add", "eax", ",", "-42"]
     assert tokens[3].type is TokenType.NUMBER
 
 
@@ -37,6 +38,7 @@ def test_skips_comments() -> None:
         TokenType.NEWLINE,
         TokenType.NEWLINE,
         TokenType.INSTRUCTION,
+        TokenType.NEWLINE,
         TokenType.EOF,
     ]
 
@@ -67,6 +69,12 @@ def test_ends_with_eof_token_at_current_position() -> None:
     token = Lexer("  ").tokenize()[-1]
     assert token.type is TokenType.EOF
     assert (token.line, token.column) == (1, 3)
+
+
+def test_adds_newline_before_eof_when_source_has_no_trailing_newline() -> None:
+    tokens = Lexer("mov eax, 1\nhlt").tokenize()
+    assert tokens[-2] == Token(TokenType.NEWLINE, "\n", 2, 4)
+    assert tokens[-1].type is TokenType.EOF
 
 
 def test_unknown_character_raises_syntax_error_with_line() -> None:

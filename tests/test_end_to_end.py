@@ -75,3 +75,41 @@ def test_runtime_division_by_zero(tmp_path):
     )
     assert result.returncode != 0
     assert "ZeroDivisionError" in result.stderr
+
+
+def test_show_tokens(tmp_path):
+    asm = tmp_path / "tokens.asm"
+    asm.write_text("mov eax, 1\nhlt\n", encoding="utf-8")
+    result = compile_file(asm, tmp_path / "tokens.py", "--show-tokens")
+    assert result.returncode == 0, result.stderr
+    assert "INSTRUCTION: 'mov' (line 1)" in result.stdout
+    assert "REGISTER: 'eax' (line 1)" in result.stdout
+    assert "EOF: ''" in result.stdout
+
+
+def test_show_ast(tmp_path):
+    asm = tmp_path / "ast.asm"
+    asm.write_text("start: mov eax, 1\nhlt\n", encoding="utf-8")
+    result = compile_file(asm, tmp_path / "ast.py", "--show-ast")
+    assert result.returncode == 0, result.stderr
+    assert "0: mov operands=[Register(name='eax'), Immediate(value=1)] label='start'" in result.stdout
+    assert "labels: {'start': 0}" in result.stdout
+
+
+def test_dot_writes_parent_folders(tmp_path):
+    asm = tmp_path / "graph.asm"
+    dot = tmp_path / "nested" / "graphs" / "graph.dot"
+    asm.write_text("start: jmp done\ndone: hlt\n", encoding="utf-8")
+    result = compile_file(asm, tmp_path / "graph.py", "--dot", str(dot))
+    assert result.returncode == 0, result.stderr
+    assert dot.exists()
+    assert "digraph CFG" in dot.read_text(encoding="utf-8")
+
+
+def test_run_shows_generated_program_output(tmp_path):
+    asm = tmp_path / "run.asm"
+    asm.write_text("mov eax, 7\nprint eax\nhlt\n", encoding="utf-8")
+    result = compile_file(asm, tmp_path / "run.py", "--run")
+    assert result.returncode == 0, result.stderr
+    assert "wrote " in result.stdout
+    assert "7\n" in result.stdout

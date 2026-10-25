@@ -18,6 +18,11 @@ def test_parses_instructions_and_operands() -> None:
     assert program.instructions[1].opcode == "add"
 
 
+def test_parses_source_without_trailing_newline() -> None:
+    program = parse("mov eax, 1\nhlt")
+    assert [instruction.opcode for instruction in program.instructions] == ["mov", "hlt"]
+
+
 def test_parses_hex_and_negative_immediates() -> None:
     program = parse("mov eax, 0x10\nsub eax, -2\n")
     assert program.instructions[0].operands[1] == Immediate(16)
@@ -61,9 +66,8 @@ def test_rejects_non_label_jump_target() -> None:
         parse("jmp eax\n")
 
 
-def test_rejects_missing_newline() -> None:
-    with pytest.raises(AsmSyntaxError, match="end of line"):
-        parse("hlt")
+def test_parses_single_instruction_without_trailing_newline() -> None:
+    assert [instruction.opcode for instruction in parse("hlt").instructions] == ["hlt"]
 
 def test_rejects_duplicate_label() -> None:
     with pytest.raises(AsmSyntaxError, match="duplicate label"):

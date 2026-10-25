@@ -110,5 +110,7 @@ class Lexer:
 
             raise AsmSyntaxError(f"unknown character {character!r}", line)
 
+        if tokens and tokens[-1].type is not TokenType.NEWLINE:
+            tokens.append(Token(TokenType.NEWLINE, "\n", line, column))
         tokens.append(Token(TokenType.EOF, "", line, column))
         return tokens
