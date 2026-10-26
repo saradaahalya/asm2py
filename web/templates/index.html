@@ -60,23 +60,34 @@ for (const name in EXAMPLES) sel.add(new Option(name, name));
 sel.onchange = () => { if (sel.value) { src.value = EXAMPLES[sel.value]; compile(); } };
 
 async function compile() {
-  const res = await fetch("/compile", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source: src.value,
-      optimize: document.getElementById("optimize").checked,
-      run: document.getElementById("run").checked
-    })
-  });
-  const d = await res.json();
-  msg.textContent = ""; msg.className = "";
-  if (!d.ok) { out.textContent = ""; msg.className = "error"; msg.textContent = "error: " + d.error; return; }
-  out.textContent = d.code;
-  let text = "";
-  if (d.warnings && d.warnings.length) text += d.warnings.map(w => "warning: " + w).join("\n") + "\n";
-  text += d.output;
-  msg.textContent = text;
+  try {
+    const res = await fetch("/compile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: src.value,
+        optimize: document.getElementById("optimize").checked,
+        run: document.getElementById("run").checked
+      })
+    });
+    const d = await res.json();
+    msg.textContent = ""; msg.className = "";
+    if (!res.ok || !d.ok) {
+      out.textContent = "";
+      msg.className = "error";
+      msg.textContent = "error: " + (d.error || "Compilation request failed.");
+      return;
+    }
+    out.textContent = d.code;
+    let text = "";
+    if (d.warnings && d.warnings.length) text += d.warnings.map(w => "warning: " + w).join("\n") + "\n";
+    text += d.output;
+    msg.textContent = text;
+  } catch (error) {
+    out.textContent = "";
+    msg.className = "error";
+    msg.textContent = "error: Unable to reach the compiler.";
+  }
 }
 document.getElementById("go").onclick = compile;
 let timer;

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from asm2py.ast_nodes import AsmSemanticError, AsmSyntaxError  # noqa: E402
 from asm2py.main import compile_source  # noqa: E402
+from asm2py.structurer import CannotStructure  # noqa: E402
 
 app = Flask(__name__)
 
@@ -21,12 +22,16 @@ def index():
 
 @app.post("/compile")
 def compile_route():
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(ok=False, error="Request body must be a JSON object.")
     source = data.get("source", "")
+    if not isinstance(source, str):
+        return jsonify(ok=False, error="'source' must be a string.")
     optimize = bool(data.get("optimize", True))
     try:
-        code, warnings = compile_source(source, optimize)
-    except (AsmSyntaxError, AsmSemanticError) as exc:
+        code, warnings = compile_source(source, optimize, style="structured")
+    except (AsmSyntaxError, AsmSemanticError, CannotStructure, ValueError) as exc:
         return jsonify(ok=False, error=str(exc))
 
     output = ""
