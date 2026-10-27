@@ -37,9 +37,9 @@ def compile_route():
             f.write(code)
             path = f.name
         try:
-            result = subprocess.run(
-                [sys.executable, path], capture_output=True, text=True, timeout=5
-            )
+            # result = subprocess.run(
+            #     [sys.executable, path], capture_output=True, text=True, timeout=5
+            # )
             output = result.stdout + result.stderr
         except subprocess.TimeoutExpired:
             output = "Timed out after 5 seconds (infinite loop?)"

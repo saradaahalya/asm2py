@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from asm2py.main import compile_source
+
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLES = ROOT / "tests" / "samples"
 ENV = {**__import__("os").environ, "PYTHONPATH": str(ROOT / "src")}
@@ -75,6 +77,15 @@ def test_runtime_division_by_zero(tmp_path):
     )
     assert result.returncode != 0
     assert "ZeroDivisionError" in result.stderr
+
+
+def test_structured_compile_honors_optimization() -> None:
+    source = "mov eax, 2\nadd eax, 3\nprint eax\nhlt\n"
+    optimized, _ = compile_source(source, True)
+    unoptimized, _ = compile_source(source, False)
+    assert "eax = 5" in optimized
+    assert "add eax, 3" not in optimized
+    assert "add eax, 3" in unoptimized
 
 
 def test_show_tokens(tmp_path):
