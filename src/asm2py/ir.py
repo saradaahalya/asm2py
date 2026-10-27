@@ -91,7 +91,6 @@ def label_to_block(blocks: list[BasicBlock]) -> dict[str, int]:
 
 
 def to_dot(blocks: list[BasicBlock]) -> str:
-    """Render the basic-block control-flow graph as Graphviz DOT."""
     lines = ["digraph CFG {"]
     for block in blocks:
         label = f"{block.id}: {block.label}" if block.label else str(block.id)

@@ -13,25 +13,65 @@ from .lexer import Lexer
 from .optimizer import optimize
 from .parser import Parser
 from .semantic import SemanticAnalyzer
+from .structurer import structure_program
 
 
 def _compile_details(
-    source: str, do_optimize: bool
+    source: str, do_optimize: bool, style: str = "structured"
 ) -> tuple[str, list[str], list[Token], Program, list[BasicBlock], dict[str, int]]:
     """Compile source and retain intermediate representations for CLI output."""
+    if style not in {"structured", "state-machine"}:
+        raise ValueError(f"unknown code generation style: {style!r}")
     tokens = Lexer(source).tokenize()
     program = Parser(tokens).parse()
     warnings = SemanticAnalyzer(program).analyze()
     blocks = build_blocks(program)
     changes: dict[str, int] = {}
+    if style == "structured":
+        structured_program = program
+        if do_optimize:
+            optimized_blocks, changes = optimize(blocks)
+            structured_program = _program_from_blocks(optimized_blocks)
+            structured_code = structure_program(structured_program)
+            if structured_code is not None:
+                return (
+                    structured_code,
+                    warnings,
+                    tokens,
+                    structured_program,
+                    optimized_blocks,
+                    changes,
+                )
+            blocks = build_blocks(program)
+            changes = {}
+        structured_code = structure_program(structured_program)
+        if structured_code is not None:
+            return structured_code, warnings, tokens, structured_program, blocks, changes
     if do_optimize:
         blocks, changes = optimize(blocks)
     return CodeGenerator(blocks).generate(), warnings, tokens, program, blocks, changes
 
 
-def compile_source(source: str, do_optimize: bool = True) -> tuple[str, list[str]]:
+def _program_from_blocks(blocks: list[BasicBlock]) -> Program:
+    """Rebuild a program after block-local optimization."""
+    instructions = [
+        instruction
+        for block in blocks
+        for instruction in block.instructions
+    ]
+    labels = {
+        instruction.label: index
+        for index, instruction in enumerate(instructions)
+        if instruction.label is not None
+    }
+    return Program(instructions=instructions, labels=labels)
+
+
+def compile_source(
+    source: str, do_optimize: bool = True, style: str = "structured"
+) -> tuple[str, list[str]]:
     """Compile assembly text. Returns (python_code, warnings)."""
-    code, warnings, _, _, _, _ = _compile_details(source, do_optimize)
+    code, warnings, _, _, _, _ = _compile_details(source, do_optimize, style)
     return code, warnings
 
 
@@ -54,6 +94,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--show-ast", action="store_true", help="print parsed AST instructions")
     parser.add_argument("--dot", metavar="FILE", help="write the control-flow graph as DOT")
     parser.add_argument("--run", action="store_true", help="run the generated Python program")
+    parser.add_argument(
+        "--style",
+        choices=("structured", "state-machine"),
+        default="structured",
+        help="Python output style (default: structured)",
+    )
     args = parser.parse_args(argv)
 
     in_path = Path(args.input)
@@ -67,9 +113,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         code, warnings, tokens, program, blocks, changes = _compile_details(
-            source, do_optimize=args.optimize
+            source, do_optimize=args.optimize, style=args.style
         )
-    except (AsmSyntaxError, AsmSemanticError) as exc:
+    except (AsmSyntaxError, AsmSemanticError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
